@@ -1,0 +1,176 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>Build a Planetary System</title>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif&family=IBM+Plex+Sans:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0d1620;--panel:#16232f;--ink:#e8eef2;--mute:#93a7b5;--line:#2c4050;--acc:#f2b35c;--ice:#8fd3ea;--rock:#c49a6c;--box-sizing:border-box;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}body{margin:0;background:#0d1620;color:var(--ink);font:15px/1.5 "IBM Plex Sans",system-ui,sans-serif}
+h1,h2{font-family:"Instrument Serif",Georgia,serif;font-weight:400;margin:0}
+.app{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) 370px;gap:12px;max-width:1360px;margin:0 auto;padding:16px}
+@media(max-width:1050px){.app{grid-template-columns:1fr}}
+.stage{background:#070d14;border:1px solid var(--line);border-radius:6px;position:relative}
+canvas{width:100%;height:auto;display:block;max-width:100%}
+.cap{position:absolute;left:12px;bottom:10px;right:12px;color:var(--mute);font-size:13px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:16px}
+.tabs{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+.tabs span{font-size:12px;padding:3px 9px;border:1px solid var(--line);border-radius:20px;color:var(--mute)}
+.tabs .on{background:var(--acc);color:#1a1205;border-color:var(--acc)}
+h2{font-size:28px;margin-bottom:4px}
+.lead{color:var(--mute);margin:0 0 12px}
+label{display:block;margin:10px 0 0;font-weight:600;font-size:14px}
+label b{float:right;color:var(--acc);font-weight:600}
+input[type=range]{width:100%;accent-color:var(--acc)}
+.note{border-left:3px solid var(--ice);padding:6px 10px;margin:12px 0;color:var(--mute);font-size:13px;background:#101b25}
+.out{background:#101b25;padding:8px 10px;border-radius:4px;font-size:13px;margin-top:10px}
+.out div{display:flex;justify-content:space-between;gap:8px}
+.warn{color:#ff9d8a}.ok{color:#8fe3a8}
+.btns{display:flex;gap:8px;margin-top:14px}
+button{font:inherit;font-weight:600;padding:8px 14px;border-radius:4px;border:1px solid var(--acc);background:var(--acc);color:#1a1205;cursor:pointer}
+button.g{background:none;color:var(--ink);border-color:var(--line)}button:disabled{opacity:.4;cursor:not-allowed}
+:focus-visible{outline:2px solid var(--ice);outline-offset:2px}
+.pl{border-top:1px solid var(--line);padding:8px 0;font-size:13px}.pl strong{font-size:14px}
+.bar{display:flex;height:7px;border-radius:3px;overflow:hidden;margin:4px 0;background:#223}
+.tag{color:var(--acc)}
+.card{border:1px solid var(--line);border-radius:4px;padding:10px;margin:10px 0}.card p{margin:2px 0 4px;font-size:13px}.eff{font-size:13px;color:var(--ice)}details summary{cursor:pointer;color:var(--acc);font-size:13px;margin-top:6px}details.pl summary{color:var(--ink);font-size:14px;margin:0}.sedcap{padding:10px 12px;font-size:13px;color:var(--mute);border-top:1px solid var(--line)}.sedcap a{color:var(--ice)}.sm{font-size:12px;color:var(--mute)}
+</style></head><body>
+<div class="app"><div class="stage"><canvas id="c" width="640" height="640"></canvas><div class="cap" id="cap"></div></div><div class="stage"><canvas id="s" width="640" height="640"></canvas><div class="sedcap" id="sedcap"></div></div>
+<div class="panel"><div class="tabs" id="tabs"></div><div id="ui"></div></div></div>
+<script>
+const G=6.674e-11,K=1.381e-23,MH=1.66e-27,MS=1.989e30,AU=1.496e11,ME=5.972e24,YR=3.156e7;
+const S={M:1.2,T:10,n:11,Ls:3,metal:1,sil:1,water:1,chon:1,gas:3,uv:false,visc:1,mag:1,dm:1,stage:0};
+const names=["Cloud","Protostar","Disk","Planets","Summary"],titles=["Molecular cloud","Protostar","Protoplanetary disk","Planetary system","Why it turned out this way"],sedT=["A cold object glows like a blackbody, and cooler blackbodies emit at longer wavelengths. At 10 K–40 K the cloud peaks in the far-infrared. Raise the temperature and the peak moves to shorter wavelengths.","The infalling envelope is still cold, so most energy comes out in the far-infrared. As the protostar heats up, a shorter-wavelength bump grows. Dust in the new disk absorbs starlight and re-emits it in the infrared, adding to the curve.","A star alone looks like a blackbody. Here the star plus a disk has extra infrared energy: dust absorbs starlight, heats up, and re-emits it as infrared. Disk dust at many temperatures (hot near the star, cold far out) fills in the long-wavelength side. A bigger inner hole removes the hottest dust, and more dust boosts the excess.","Once the gas and dust are gone, little dust is left to absorb starlight, so the infrared excess fades and the curve returns toward the star's blackbody."],nxt=["Collapse the cloud","Build the disk","Grow planets","See why"];let Q1=0;
+const base={metal:.0018,sil:.0030,water:.0060,chon:.0030}; // mass fractions rel. to gas (solar-like)
+let D={},planets=[],t0=performance.now(),P=[];
+for(let i=0;i<700;i++)P.push({u:Math.random(),v:Math.random(),w:Math.random(),f:Math.random()*6.28});
+const f2=(x,d=2)=>(+x).toFixed(d);
+function calc(){
+ const rho=Math.pow(10,S.n)*2.3*MH, Ls=S.Ls*1e16;
+ D.MJ=Math.pow(K*S.T/(G*2.3*MH),1.5)/Math.sqrt(rho)/MS;
+ D.tff=Math.sqrt(3*Math.PI/(32*G*rho))/YR;
+ D.rcen=Ls*Ls/(G*S.M*MS)/AU;
+ D.collapse=S.M>D.MJ; D.binary=D.rcen>150;
+ const Mt=D.binary?S.M/2:S.M, fd=Math.min(.3,.01+.0004*D.rcen);
+ let Md=Math.min(.5*Mt,Mt*fd*S.dm),Ms=Mt-Md;
+ D.q=Md/Ms;D.Q=.2/Math.max(D.q,.001);D.gi=D.Q<1;
+ if(D.gi){const ex=Md-.2*Ms;Md-=ex;Ms+=ex}
+ D.Md=Md;D.Ms=Ms;
+ D.rOut=Math.min(300,Math.max(10,D.rcen)); if(D.binary)D.rOut=Math.max(10,D.rOut/3); D.rOut*=Math.pow(S.visc,.3);
+ D.L=Math.pow(D.Ms,3.5);D.rin=.02+.06*S.mag;D.tg=S.gas*(S.uv?.4:1)/S.visc;
+ D.s1=D.Md*MS/(4*Math.PI*Math.sqrt(D.rOut)*AU*AU);
+}
+const Tr=r=>280*Math.pow(D.L,.25)/Math.sqrt(r), rT=T=>Math.pow(280*Math.pow(D.L,.25)/T,2);
+function comp(r){const T=Tr(r),m=S;
+ let c={metal:T<1300?base.metal*m.metal:0,sil:T<1200?base.sil*m.sil:0,water:T<200?base.water*m.water:0,
+ chon:T<150?base.chon*m.chon*(T<40?1.5:1):0};return c}
+function sigS(r,c){const g=D.s1*Math.pow(r,-1.5);return g*(c.metal+c.sil+c.water+c.chon)}
+function build(){planets=[];const snow=rT(200),tg=D.tg*1e6;let giant=false;
+ for(let r=Math.max(.25*Math.sqrt(D.L),D.rin);r<D.rOut*.9;r*=1.5){
+  const c=comp(r),sg=sigS(r,c),R=r*AU;
+  let Mi=Math.pow(16*Math.PI*R*R*sg,1.5)/Math.sqrt(3*D.Ms*MS)/ME; // isolation mass, M_earth
+  if(r>snow)Mi*=2.5; // feeding zone replenished beyond snow line (Sec. 15.5)
+  const tc=4e5*Math.pow(r/5.2,1.5)*(100/Math.max(sg,.01)),tot=c.metal+c.sil+c.water+c.chon||1;
+  let type,mass=Mi,col;
+  if(Mi<.05){type="Planetesimal belt";col="#8a8f94"}
+  else if(Mi>=10&&tc<tg*.8){type="Gas giant";mass=Math.min(380,Mi*(8+20*(1-tc/tg)));col="#e0c08a";giant=true}
+  else if(Mi>=10){type="Ice giant (gas gone too soon)";mass=Mi*1.25;col="#6fc6e0"}
+  else if(r>snow){type=Mi>2?"Ice-rich sub-Neptune":"Icy world";col="#a9d8ea"}
+  else{type=Mi>2?"Super-Earth":"Rocky planet";col="#c49a6c"}
+  planets.push({r,Mi:mass,type,col,c,tot,tc,sg});}
+ planets.forEach(p=>{p.hz=p.r>.95*Math.sqrt(D.L)&&p.r<1.7*Math.sqrt(D.L);
+  p.wd=.0005*S.water*(giant?2:1);
+  if(p.hz&&p.type.match(/Rocky|Super/)&&p.Mi>.3&&p.Mi<6)p.type+=p.wd<1e-4?" (temperate, dry)":" (temperate, oceans)"});
+}
+// ---------- UI
+const $=id=>document.getElementById(id);
+const sl=(k,l,a,b,s,u='')=>`<label>${l}<b id="v_${k}">${S[k]}${u}</b></label><input type="range" min="${a}" max="${b}" step="${s}" value="${S[k]}" oninput="S.${k}=+this.value;upd()" aria-label="${l}">`;
+const more=t=>`<details><summary>Learn more</summary><div class="note">${t}</div></details>`;
+function ui(){const s=S.stage;$("tabs").innerHTML=names.map((n,i)=>`<span class="${i==s?'on':''}">${n}</span>`).join("");
+ let h=`<h2>${titles[s]}</h2>`;
+ if(s==0)h+=`<p class="lead">Set the cloud and what it's made of. Gravity has to beat pressure.</p>${sl('M','Mass (M☉)',.2,5,.1)}${sl('T','Temperature (K)',10,40,1)}${sl('n','Density (log₁₀ per m³)',10,12,.1)}${sl('Ls','Spin (×10¹⁶ m²/s)',.5,8,.1)}
+ <p class="lead" style="margin-top:14px">Ingredients (× solar abundance)</p>${sl('metal','Metal (Fe, Ni)',.1,4,.1,'×')}${sl('sil','Silicates',.1,4,.1,'×')}${sl('water','Water',.1,4,.1,'×')}${sl('chon','Carbon & nitrogen',.1,4,.1,'×')}<div class="out" id="o"></div>
+ ${more('A core collapses when |E<sub>G</sub>| > 2E<sub>K</sub>, i.e. M > M<sub>J</sub> ∝ T<sup>3/2</sup>ρ<sup>−1/2</sup> (eq. 15.1). Free-fall time t<sub>ff</sub> = √(3π/32Gρ) (eq. 15.3). Gas with specific angular momentum L<sub>s</sub> lands at r<sub>cen</sub> ≈ L<sub>s</sub>²/GM (eq. 15.4). Too much spin splits the core into a binary.')}`;
+ if(s==1)h+=`<p class="lead">The core collapses inside-out. Rotation flattens it into a disk around the growing protostar.</p><div class="out" id="o"></div>${more('Most angular momentum ends up in the disk: the Sun has 99.8% of the Solar System\'s mass but over 98% of its angular momentum. 25–50% of pre-main-sequence solar-mass stars show infrared excess from disks (§15.2.3).')}`;
+ if(s==2)h+=`<p class="lead">Three processes move mass and angular momentum in the disk. Tune each one.</p>
+ <div class="card"><strong>Viscous torques</strong><p>Fast inner gas rubs against slow outer gas. Mass drifts in, the disk spreads.</p>${sl('visc','Viscosity',.3,3,.1,'×')}<div class="eff" id="e_v"></div>${more('Molecules closer in orbit faster. Collisions speed up outer gas (pushing it out) and slow inner gas (so it falls in). Most matter diffuses inward, angular momentum moves outward, and the disk spreads on a diffusion timescale t ≈ ℓ²/ν (eq. 13.10). In this game more viscosity means faster evolution and a shorter gas lifetime.')}</div>
+ <div class="card"><strong>Magnetic torques</strong><p>The star's field grabs ionized inner gas and pushes it toward the star's spin.</p>${sl('mag','Stellar field strength',0,4,.1,'×')}<div class="eff" id="e_m"></div>${more('If field lines thread the disk, gas orbiting faster than the star spins loses angular momentum and slower gas gains it. This only works where gas is ionized (the hot inner disk). Farther out the gas is less ionized and the field weaker, so transfer is limited. Here, the field sets the disk\'s inner edge.')}</div>
+ <div class="card"><strong>Gravitational torques</strong><p>A heavy, cold disk develops spiral arms that shuffle mass around.</p>${sl('dm','Disk mass',.5,3,.1,'×')}<div class="eff" id="e_g"></div>${more('A thin rotating disk is unstable when Toomre Q<sub>T</sub> < 1 (eq. 13.12). Spiral density waves then transport mass and angular momentum on a dynamical timescale until it is stable again, which limits disk mass to ≲ the star\'s mass. Large protoplanets also open gaps and excite density waves. Here Q<sub>T</sub> ≈ 0.2 / (M<sub>disk</sub>/M<sub>star</sub>), a rough proxy.')}</div>
+ <label style="font-weight:400"><input type="checkbox" ${S.uv?'checked':''} onchange="S.uv=this.checked;upd()"> Nearby O/B stars strip the gas</label>${sl('gas','Gas lifetime (Myr)',1,10,.5)}<div class="out" id="o"></div>
+ ${more('Condensation (§15.3.3): Al/Ca/Ti oxides ~1700 K; Fe–Ni ~1300 K, then Mg silicates; FeS ~700 K; water ice below ~200 K; NH₃ and CH₄ hydrates a bit colder; CH₄ ice below ~40 K. Temperature here is T ≈ 280 K · L<sup>1/4</sup> · r<sup>−1/2</sup>, a simple approximation.')}`;
+ if(s==3){h+=`<p class="lead">Tap a planet for its makeup.</p><div class="out" id="o"></div><div id="pl"></div>${more('Embryos grow by runaway then oligarchic growth until their feeding zone is used up (the isolation mass). A core of several M⊕ can then capture gas (core-nucleated accretion, §15.6); runaway gas accretion starts once gas mass matches solid mass. Giants need their core before the gas is gone. Terrestrial planets take ~10⁸ yr (§15.5).')}`}
+ if(s==4){calc();build();h+=summary()}
+ h+=`<div class="btns"><button class="g" onclick="go(-1)" ${s==0?'disabled':''}>Back</button>${s<4?`<button id="nx" onclick="go(1)">${nxt[s]}</button>`:`<button onclick="S.stage=0;t0=performance.now();ui()">Start over</button>`}</div>`;
+ $("ui").innerHTML=h;$("sedcap").innerHTML=sedT[Math.min(s,3)]+' <a href="https://blog.diskdetective.org/2014/02/01/spectral-energy-distributions-seds/" target="_blank" rel="noopener">Disk Detective: SEDs</a>';upd()}
+function summary(){const gs=planets.filter(p=>p.type=="Gas giant"),is=planets.filter(p=>p.type.startsWith("Ice giant")),hz=planets.filter(p=>p.hz),sn=rT(200),L=[];
+ L.push(["Cloud to star",`Your ${f2(S.M)} M☉ core was ${f2(S.M/D.MJ,1)}× its Jeans mass, so it collapsed in about ${Math.round(D.tff/1e3)*1e3} yr. Spin set r_cen ≈ ${f2(D.rcen,0)} AU, ${D.binary?"so it split into a binary and each disk was truncated.":"so one star formed with a disk about "+Math.round(D.rOut)+" AU wide."}`]);
+ L.push(["Disk mass",`The disk held ${f2(D.Md,3)} M☉ (Q_T ≈ ${f2(D.Q,1)}). ${D.gi?"That was gravitationally unstable, so spiral arms moved mass inward until it settled.":"That was stable, so viscosity did the transport."} More disk mass means more solids and bigger isolation masses.`]);
+ L.push(["Viscosity and gas",`Viscosity ×${S.visc} gave the gas ${f2(D.tg,1)} Myr${S.uv?" (cut short by nearby O/B stars)":""}. Cores had to reach ~10 M⊕ before then to become gas giants.`]);
+ L.push(["Magnetic field",`The stellar field (×${S.mag}) cleared the disk inside ${f2(D.rin,2)} AU, so nothing formed closer in.`]);
+ L.push(["Heat and ingredients",`The ${f2(D.L,1)} L☉ star put the snow line at ${f2(sn,1)} AU. Inside it only metal and silicates condensed. Outside it, water (×${S.water}) and C/N ices (×${S.chon}) added solids, so cores grew larger there.`]);
+ L.push(["Result",(gs.length?`${gs.length} gas giant${gs.length>1?"s":""}: cores passed ~10 M⊕ while gas remained. `:is.length?"Cores reached giant mass too late, so the gas was gone: ice giants. ":"No core reached ~10 M⊕, so no giants. Try more disk mass, more ice, or longer-lived gas. ")+(hz.length?"Habitable-zone: "+hz.map(p=>f2(p.r,2)+" AU "+p.type).join("; ")+".":"No planet sits in the habitable zone.")]);
+ return L.map(a=>`<div class="pl"><strong>${a[0]}</strong><br><span class="sm" style="font-size:13px;color:var(--ink)">${a[1]}</span></div>`).join("")+`<p class="sm">Change one input and come back to compare.</p>`}
+function upd(){calc();for(const k in S){const e=$("v_"+k);if(e)e.firstChild.textContent=S[k]+(['metal','sil','water','chon','visc','mag','dm'].includes(k)?'×':'')}
+ const o=$("o"),s=S.stage;if(s==3||s==4)build();if(!o)return;let h="";
+ const r=(a,b)=>`<div><span>${a}</span><span>${b}</span></div>`,set=(i,t)=>{const e=$(i);if(e)e.innerHTML=t};
+ if(s==0){h=r("Jeans mass",f2(D.MJ)+" M☉")+r("Free-fall time",Math.round(D.tff/1e3)*1e3+" yr")+
+  `<div class="${D.collapse?'ok':'warn'}">${D.collapse?"Mass exceeds Jeans mass: it collapses.":"Thermal pressure wins. Raise mass or density, or cool it."}</div>`+(D.binary?`<div class="warn">Fast spin: the core splits into a binary.</div>`:"");$("nx").disabled=!D.collapse}
+ if(s==1)h=r("Star mass",f2(D.Ms)+" M☉")+r("Disk mass",f2(D.Md,3)+" M☉")+r("Disk radius",Math.round(D.rOut)+" AU")+`<div id="ms"></div>`;
+ if(s==2){h=r("Snow line (200 K)",f2(rT(200),2)+" AU")+r("Gas lifetime",f2(D.tg,1)+" Myr");
+  set("e_v",`Disk spreads to ${Math.round(D.rOut)} AU. Gas lasts ${f2(D.tg,1)} Myr.`);set("e_m",S.mag==0?"No coupling: the disk reaches the star.":`Inner edge at ${f2(D.rin,2)} AU.`);set("e_g",`Q_T ≈ ${f2(D.Q,1)}: ${D.gi?"unstable, spiral arms dump mass inward.":"stable."}`)}
+ if(s==3){const gg=planets.filter(p=>p.type=="Gas giant").length;h=r("Planets",planets.length)+r("Gas giants",gg);
+  $("pl").innerHTML=planets.map(p=>{const c=p.c,t=p.tot,w=k=>f2(c[k]/t*100,0);
+  return`<details class="pl"><summary><span style="color:${p.col}">●</span> ${f2(p.r,2)} AU · ${p.type} · ${p.Mi<.1?f2(p.Mi,3):f2(p.Mi,1)} M⊕</summary><div class="bar"><span style="width:${w('metal')}%;background:#8b8f96"></span><span style="width:${w('sil')}%;background:#c49a6c"></span><span style="width:${w('water')}%;background:#5fb3e0"></span><span style="width:${w('chon')}%;background:#b79de8"></span></div><span class="sm">${w('metal')}% metal, ${w('sil')}% silicate, ${w('water')}% water, ${w('chon')}% C/N ices${p.type.includes("Gas")?" + H/He envelope":""}</span></details>`}).join("")}
+ o.innerHTML=h}
+function go(d){S.stage+=d;t0=performance.now();ui()}
+// ---------- drawing
+const cv=$("c"),x=cv.getContext("2d"),C=320;
+function frame(now){const t=now-t0,s=S.stage;x.fillStyle="#070d14";x.fillRect(0,0,640,640);let cap="";
+ if(s==0){const R=D.collapse?200*(.7+.3*(1+Math.cos(t/900))/2):220;
+  P.forEach(p=>{const th=Math.acos(2*p.u-1),ph=p.f+t/6000,r=R*Math.cbrt(p.v)*(1+.0*p.w);
+   const px=C+r*Math.sin(th)*Math.cos(ph),py=C+r*Math.cos(th)*.95;x.fillStyle=`hsla(${p.w>.7?200:25},50%,${50+20*p.w}%,.5)`;x.fillRect(px,py,2,2)});
+  cap=D.collapse?"Gravity exceeds thermal support. Collapse begins.":"Stable: the core stays a cold cloud."}
+ else if(s==1){const q=Q1=Math.min(1,t/9000),ph=D.rOut,sc=60+190*Math.sqrt(ph/300);
+  P.forEach(p=>{const th=Math.acos(2*p.u-1),a=p.f+t/(500+3000*p.v);const rr=(220*(1-q)+sc*p.v*(.3+.7*q)*1.0)*Math.cbrt(p.w+.2);
+   const X=Math.sin(th)*Math.cos(a),Z=Math.cos(th);const Y=Z*(1-.93*q);x.fillStyle=`hsla(${30+q*10},55%,${55+20*p.w}%,.5)`;x.fillRect(C+rr*X,C+rr*Y*.9,2,2)});
+  const sr=3+q*10,g=x.createRadialGradient(C,C,0,C,C,sr*3);g.addColorStop(0,q>.75?"#fff6d0":q>.3?"#ffb35c":"#a0442a");g.addColorStop(1,"rgba(255,120,40,0)");x.fillStyle=g;x.beginPath();x.arc(C,C,sr*3,0,7);x.fill();
+  const ms=$("ms");if(ms)ms.innerHTML=[[.1,"Core turns opaque; heat is trapped"],[.35,"Protostar reaches hydrostatic equilibrium"],[.6,"~10⁶ K: deuterium fusion starts"],[.9,"~10⁷ K: hydrogen fusion holds the star up"]].map(a=>`<div class="${q>=a[0]?'ok':''}" style="color:${q>=a[0]?'':'var(--mute)'}">${q>=a[0]?'●':'○'} ${a[1]}</div>`).join("");
+  cap="Rotation flattens the infalling gas into a disk."}
+ else drawDisk(t,s);
+ if(cap)$("cap").textContent=cap;drawSED(s);requestAnimationFrame(frame)}
+function zc(r){const T=Tr(r);return T>1300?"#e8803a":T>200?"#c9a77a":T>150?"#9cc9e3":T>40?"#a9c4f0":"#c4b4ee"}
+function drawDisk(t,s){const view=s==2?D.rOut:Math.max(10,D.rOut*.9),px=290,m=r=>px*Math.sqrt(r/view);
+ if(s==2)P.forEach(p=>{const u=p.v,r=view*u*u,a=p.f+t/(4000*(u*u*u*3+.05)*1.5);
+  if(r<D.rin)return;const R=m(r),y=(p.w-.5)*6*(.2+u);x.fillStyle=zc(r);x.globalAlpha=.65;x.fillRect(C+R*Math.cos(a),C+R*Math.sin(a)+y,1.8,1.8)});x.globalAlpha=1;
+ if(s==2){if(D.gi){x.strokeStyle="#ff9d8a99";for(let k=0;k<2;k++){x.beginPath();for(let a=0;a<12.5;a+=.2){const R=px*a/12.5,A=a*.9+k*Math.PI+t/6000;x[a?"lineTo":"moveTo"](C+R*Math.cos(A),C+R*Math.sin(A))}x.stroke()}}x.strokeStyle="#f2b35c";x.beginPath();x.arc(C,C,Math.max(3,m(D.rin)),0,7);x.stroke()}
+ const lines=[[1300,"metal"],[700,"FeS"],[200,"snow line"],[150,"NH₃/CH₄ hydrates"],[40,"CH₄ ice"]];
+ if(s==2){x.font="12px IBM Plex Sans";lines.forEach(([T,l],i)=>{const r=rT(T);if(r>view)return;x.strokeStyle="#ffffff44";x.setLineDash([4,4]);x.beginPath();x.arc(C,C,m(r),0,7);x.stroke();x.setLineDash([]);x.fillStyle="#cfe";x.fillText(l+" "+T+" K",C+m(r)*.707+4,C-m(r)*.707-2)})}
+ else{planets.forEach((p,i)=>{x.strokeStyle="#ffffff18";x.beginPath();x.arc(C,C,m(p.r),0,7);x.stroke();
+  const a=i*2.1+t/(1800*Math.pow(p.r,1.5)+300),R=m(p.r),pr=Math.max(3,Math.min(15,3*Math.pow(p.Mi,.28)+1));
+  if(p.type=="Planetesimal belt"){for(let k=0;k<30;k++){const b=k*.21+i;x.fillStyle="#889";x.fillRect(C+R*Math.cos(b+t/9e3)+Math.sin(k*7)*3,C+R*Math.sin(b+t/9e3)+Math.cos(k*5)*3,1.5,1.5)}return}
+  const X=C+R*Math.cos(a),Y=C+R*Math.sin(a);if(p.type=="Gas giant"){x.fillStyle="#e0c08a33";x.beginPath();x.arc(X,Y,pr+4,0,7);x.fill()}
+  x.fillStyle=p.col;x.beginPath();x.arc(X,Y,pr,0,7);x.fill();if(p.hz){x.strokeStyle="#8fe3a8";x.beginPath();x.arc(X,Y,pr+3,0,7);x.stroke()}});
+  x.fillStyle="#ffffff0d";const h0=Math.sqrt(D.L),a1=m(.95*h0),a2=m(1.7*h0);x.strokeStyle="#8fe3a855";x.beginPath();x.arc(C,C,(a1+a2)/2,0,7);x.lineWidth=Math.max(1,a2-a1);x.stroke();x.lineWidth=1}
+ const g=x.createRadialGradient(C,C,0,C,C,16);g.addColorStop(0,"#fff6d0");g.addColorStop(1,"rgba(255,170,60,0)");x.fillStyle=g;x.beginPath();x.arc(C,C,16,0,7);x.fill();
+ $("cap").textContent=s==2?"Colors show what can condense: rock and metal inside the snow line; ices beyond it.":"Green ring: habitable zone. Distances are sqrt-scaled."}
+const sc=$("s").getContext("2d"),LS=[];for(let i=0;i<90;i++)LS.push(Math.pow(10,-1+4*i/89));
+const pk=(l,T)=>{const x=14388/(l*T);return x>500?0:1/(Math.pow(l,4)*(Math.exp(x)-1))};
+function bb(T,W){const v=LS.map(l=>pk(l,T)),n=v.reduce((a,b)=>a+b,0)*4/89*Math.LN10;return v.map(a=>W*a/n)}
+function drawSED(s){
+ const Te=5772*Math.pow(D.L,.25)/Math.pow(D.Ms,.4),q=s==1?Q1:1,fd=.3*Math.min(1,.2+D.q*8)*Math.min(1.5,(S.metal+S.sil+S.water+S.chon)/4);
+ let st=new Array(90).fill(0),dk=st.slice(),en=st.slice();
+ if(s==0)en=bb(Math.max(S.T,5),1);else{
+  if(s==1)en=bb(30,2*(1-q)+.02);
+  st=bb(Te*(.55+.45*q),D.L*(.1+.9*q));
+  const wd=s==1?fd*q:s==2?fd:.02;
+  if(wd>0)for(let i=0;i<24;i++){const r=D.rin*Math.pow(D.rOut/D.rin,i/23);bb(Math.max(Tr(r),10),wd*D.L/24).forEach((v,k)=>dk[k]+=v)}}
+ const tot=LS.map((_,k)=>st[k]+dk[k]+en[k]),top=Math.ceil(Math.log10(Math.max(...tot))),lo=top-5;
+ const W=640,H=640,pl=62,pr=16,pt=56,pb=60,X=l=>pl+(Math.log10(l)+1)/4*(W-pl-pr),Y=v=>pt+(top-Math.log10(Math.max(v,1e-30)))/5*(H-pt-pb);
+ sc.fillStyle="#070d14";sc.fillRect(0,0,W,H);sc.font="13px IBM Plex Sans";sc.strokeStyle="#2c4050";sc.fillStyle="#93a7b5";sc.lineWidth=1;
+ [.1,1,10,100,1000].forEach(l=>{sc.beginPath();sc.moveTo(X(l),pt);sc.lineTo(X(l),H-pb);sc.stroke();sc.fillText(l,X(l)-8,H-pb+16)});
+ for(let e=lo;e<=top;e++){sc.beginPath();sc.moveTo(pl,Y(10**e));sc.lineTo(W-pr,Y(10**e));sc.stroke();sc.fillText("10^"+e,6,Y(10**e)+4)}
+ sc.fillText("Wavelength (µm)",W/2-50,H-pb+38);sc.save();sc.translate(16,H/2+40);sc.rotate(-Math.PI/2);sc.fillText("λFλ (relative)",0,0);sc.restore();
+ sc.save();sc.beginPath();sc.rect(pl,pt,W-pl-pr,H-pt-pb);sc.clip();
+ const ln=(a,c,w,d)=>{sc.strokeStyle=c;sc.lineWidth=w;sc.setLineDash(d);sc.beginPath();let on=0;a.forEach((v,k)=>{if(v<=0)return;on?sc.lineTo(X(LS[k]),Y(v)):sc.moveTo(X(LS[k]),Y(v));on=1});sc.stroke();sc.setLineDash([])};
+ ln(en,"#b79de8",2,[4,4]);ln(st,"#ffb35c",2,[4,4]);ln(dk,"#8fd3ea",2,[4,4]);ln(tot,"#fff",3,[]);sc.restore();
+ sc.fillStyle="#e8eef2";sc.font="15px IBM Plex Sans";sc.fillText(["Cold core: peaks in the far-infrared","Embedded protostar (Class 0/I): envelope hides the star","Star + disk (Class II): warm dust adds infrared excess","Disk mostly gone (Class III): close to a bare star"][Math.min(s,3)],pl,24);
+ sc.font="12px IBM Plex Sans";[["Total","#fff"],["Star","#ffb35c"],["Disk","#8fd3ea"],["Envelope/cloud","#b79de8"]].forEach((a,i)=>{sc.fillStyle=a[1];sc.fillText("■ "+a[0],pl+i*100,42)})}
+S.stage=0;ui();requestAnimationFrame(frame);
+</script></body></html>
